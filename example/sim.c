@@ -9,8 +9,12 @@
 void disassemble_program();
 
 /* Memory-mapped IO ports */
+// adapted to emu68kplus
 #define INPUT_ADDRESS 0x800000
 #define OUTPUT_ADDRESS 0x400000
+
+#define UART_DREG_ADDRESS 0x800A0	// data register
+#define UART_CREG_ADDRESS 0x800A1	// command/status register
 
 /* IRQ connections */
 #define IRQ_NMI_DEVICE 7
@@ -18,11 +22,13 @@ void disassemble_program();
 #define IRQ_OUTPUT_DEVICE 1
 
 /* Time between characters sent to output device (seconds) */
+// changed as milliseconds about 10000bps serial speed
 #define OUTPUT_DEVICE_PERIOD 1
 
 /* ROM and RAM sizes */
-#define MAX_ROM 0xfff
-#define MAX_RAM 0xff
+//#define MAX_ROM 0xfff
+// emu68kplus has 128kByte RAM
+#define MAX_RAM 0xfffff
 
 
 /* Read/write macros */
@@ -75,22 +81,31 @@ void output_device_write(unsigned int value);
 void int_controller_set(unsigned int value);
 void int_controller_clear(unsigned int value);
 
-void get_user_input(void);
+void update_user_input(void);
+
+int uart_creg_read(void);
+int uart_dreg_read(void);
+void uart_dreg_write(unsigned char c);
 
 
 /* Data */
 unsigned int g_quit = 0;                        /* 1 if we want to quit */
 unsigned int g_nmi = 0;                         /* 1 if nmi pending */
 
-int          g_input_device_value = -1;         /* Current value in input device */
+// one byte read ahead and ungetc
+// we compose PIR9 (uart creg) with g_input_device_ready 
+// and g_output_device_ready
+int			 g_input_device_value = -1;
+int          g_input_device_ready = 0;         /* Current status in input device */
 
 unsigned int g_output_device_ready = 0;         /* 1 if output device is ready */
 time_t       g_output_device_last_output;       /* Time of last char output */
 
 unsigned int g_int_controller_pending = 0;      /* list of pending interrupts */
 unsigned int g_int_controller_highest_int = 0;  /* Highest pending interrupt */
-
+#if defined(MAX_ROM)
 unsigned char g_rom[MAX_ROM+1];                 /* ROM */
+#endif //MAX_ROM
 unsigned char g_ram[MAX_RAM+1];                 /* RAM */
 unsigned int  g_fc;                             /* Current function code from CPU */
 
@@ -125,18 +140,20 @@ unsigned int cpu_read_byte(unsigned int address)
 {
 	if(g_fc & 2)	/* Program */
 	{
+#if defined(MAX_ROM)
 		if(address > MAX_ROM)
 			exit_error("Attempted to read byte from ROM address %08x", address);
 		return READ_BYTE(g_rom, address);
+#endif //MAX_ROM
 	}
 
 	/* Otherwise it's data space */
 	switch(address)
 	{
-		case INPUT_ADDRESS:
-			return input_device_read();
-		case OUTPUT_ADDRESS:
-			return output_device_read();
+		case UART_CREG_ADDRESS:
+			return uart_creg_read();
+		case UART_DREG_ADDRESS:
+			return uart_dreg_read();
 		default:
 			break;
 	}
@@ -149,18 +166,20 @@ unsigned int cpu_read_word(unsigned int address)
 {
 	if(g_fc & 2)	/* Program */
 	{
+#if defined(MAX_ROM)
 		if(address > MAX_ROM)
 			exit_error("Attempted to read word from ROM address %08x", address);
 		return READ_WORD(g_rom, address);
+#endif //MAX_ROM
 	}
 
 	/* Otherwise it's data space */
 	switch(address)
 	{
-		case INPUT_ADDRESS:
-			return input_device_read();
-		case OUTPUT_ADDRESS:
-			return output_device_read();
+		case UART_CREG_ADDRESS:
+			return uart_creg_read();
+		case UART_DREG_ADDRESS:
+			return uart_dreg_read();
 		default:
 			break;
 	}
@@ -173,18 +192,20 @@ unsigned int cpu_read_long(unsigned int address)
 {
 	if(g_fc & 2)	/* Program */
 	{
+#if defined(MAX_ROM)
 		if(address > MAX_ROM)
 			exit_error("Attempted to read long from ROM address %08x", address);
 		return READ_LONG(g_rom, address);
+#endif //MAX_ROM
 	}
 
 	/* Otherwise it's data space */
 	switch(address)
 	{
-		case INPUT_ADDRESS:
-			return input_device_read();
-		case OUTPUT_ADDRESS:
-			return output_device_read();
+		case UART_CREG_ADDRESS:
+			return uart_creg_read();
+		case UART_DREG_ADDRESS:
+			return uart_dreg_read();
 		default:
 			break;
 	}
@@ -196,16 +217,22 @@ unsigned int cpu_read_long(unsigned int address)
 
 unsigned int cpu_read_word_dasm(unsigned int address)
 {
+#if defined(MAX_ROM)
 	if(address > MAX_ROM)
 		exit_error("Disassembler attempted to read word from ROM address %08x", address);
 	return READ_WORD(g_rom, address);
+#endif //MAX_ROM
+	return READ_WORD(g_ram, address);
 }
 
 unsigned int cpu_read_long_dasm(unsigned int address)
 {
+#if defined(MAX_ROM)
 	if(address > MAX_ROM)
 		exit_error("Dasm attempted to read long from ROM address %08x", address);
 	return READ_LONG(g_rom, address);
+#endif //MAX_ROM
+	return READ_LONG(g_ram, address);
 }
 
 
@@ -218,12 +245,9 @@ void cpu_write_byte(unsigned int address, unsigned int value)
 	/* Otherwise it's data space */
 	switch(address)
 	{
-		case INPUT_ADDRESS:
-			input_device_write(value&0xff);
-			return;
-		case OUTPUT_ADDRESS:
-			output_device_write(value&0xff);
-			return;
+		case UART_DREG_ADDRESS:
+			uart_dreg_write(value);
+			break;
 		default:
 			break;
 	}
@@ -240,12 +264,9 @@ void cpu_write_word(unsigned int address, unsigned int value)
 	/* Otherwise it's data space */
 	switch(address)
 	{
-		case INPUT_ADDRESS:
-			input_device_write(value&0xffff);
-			return;
-		case OUTPUT_ADDRESS:
-			output_device_write(value&0xffff);
-			return;
+		case UART_DREG_ADDRESS:
+			uart_dreg_write(value);
+			break;
 		default:
 			break;
 	}
@@ -262,12 +283,9 @@ void cpu_write_long(unsigned int address, unsigned int value)
 	/* Otherwise it's data space */
 	switch(address)
 	{
-		case INPUT_ADDRESS:
-			input_device_write(value);
-			return;
-		case OUTPUT_ADDRESS:
-			output_device_write(value);
-			return;
+		case UART_DREG_ADDRESS:
+			uart_dreg_write(value);
+			break;
 		default:
 			break;
 	}
@@ -334,14 +352,30 @@ int nmi_device_ack(void)
 /* Implementation for the input device */
 void input_device_reset(void)
 {
-	g_input_device_value = -1;
+	changemode(1);
+	// I have tried (and failed) to flush pending input by doing
+	//  while (kbhit())
+	//     osd_get_char();
+	// but it did not work. (One character remains in input buffer, 
+	// by typing second char, it returns 1st char)
+	// I don't know why it did not work, but I recognize omitting this code
+	// make it works.
+	setbuf(stdin, NULL);
+	setbuf(stdout, NULL);
+	g_input_device_ready = 0;
 	int_controller_clear(IRQ_INPUT_DEVICE);
+}
+
+void input_device_restore(void)
+{
+	changemode(0);
 }
 
 void input_device_update(void)
 {
-	if(g_input_device_value >= 0)
+	if (g_input_device_ready) {
 		int_controller_set(IRQ_INPUT_DEVICE);
+	}
 }
 
 int input_device_ack(void)
@@ -351,23 +385,41 @@ int input_device_ack(void)
 
 unsigned int input_device_read(void)
 {
-	int value = g_input_device_value > 0 ? g_input_device_value : 0;
+	int value;
+	//printf("[");
+	value = g_input_device_value;
+	// emulate uart_dreg is read.
 	int_controller_clear(IRQ_INPUT_DEVICE);
-	g_input_device_value = -1;
+	g_input_device_ready = 0;
+	//printf("%02X]", value);
 	return value;
 }
 
 void input_device_write(unsigned int value)
 {
+	// do nothing
 	(void)value;
 }
 
+//
+// get_msec ... with clock_gettime, a new POSIC standard
+//
+long int get_msec(void)
+{
+	struct timespec ts;
+	static unsigned long int start = 0;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	if (start == 0) {
+		start = ts.tv_nsec;
+	}
+	return ((unsigned long int)ts.tv_nsec - start)/1000000;
+}
 
 /* Implementation for the output device */
 void output_device_reset(void)
 {
-	g_output_device_last_output = time(NULL);
-	g_output_device_ready = 0;
+	g_output_device_last_output = get_msec();
+	g_output_device_ready = 1;
 	int_controller_clear(IRQ_OUTPUT_DEVICE);
 }
 
@@ -375,8 +427,9 @@ void output_device_update(void)
 {
 	if(!g_output_device_ready)
 	{
-		if((time(NULL) - g_output_device_last_output) >= OUTPUT_DEVICE_PERIOD)
+		if((get_msec() - g_output_device_last_output) >= OUTPUT_DEVICE_PERIOD)
 		{
+			//printf("!!");
 			g_output_device_ready = 1;
 			int_controller_set(IRQ_OUTPUT_DEVICE);
 		}
@@ -401,7 +454,7 @@ void output_device_write(unsigned int value)
 	{
 		ch = value & 0xff;
 		printf("%c", ch);
-		g_output_device_last_output = time(NULL);
+		g_output_device_last_output = get_msec();
 		g_output_device_ready = 0;
 		int_controller_clear(IRQ_OUTPUT_DEVICE);
 	}
@@ -435,28 +488,61 @@ void int_controller_clear(unsigned int value)
 
 
 /* Parse user input and update any devices that need user input */
-void get_user_input(void)
+void update_user_input(void)
 {
 	static int last_ch = -1;
-	int ch = osd_get_char();
-
-	if(ch >= 0)
-	{
-		switch(ch)
-		{
-			case 0x1b:
-				g_quit = 1;
-				break;
-			case '~':
-				if(last_ch != ch)
-					g_nmi = 1;
-				break;
-			default:
-				g_input_device_value = ch;
-		}
+	int ch;
+	if (g_input_device_ready || !kbhit())
+		return;
+	while (kbhit()) {
+		ch = osd_get_char();
+		//printf("=%02X=", ch&0xff);
 	}
+
+	switch(ch)
+	{
+		case 0x1b:
+			g_quit = 1;
+			break;
+		case '~':
+			if(last_ch != ch)
+				g_nmi = 1;
+			break;
+		default:
+			g_input_device_ready = 1;
+			g_input_device_value = ch;
+	}
+	//printf("(%02X)", ch);
 	last_ch = ch;
 }
+
+/* Implementation of UART */
+int uart_creg_read(void)
+{
+	static unsigned char prev_c = 0xe5;
+	unsigned char c = 0;
+	if (g_input_device_ready)
+		c |= 1;
+	if (g_output_device_ready)
+		c |= 2;
+	//if (prev_c != c)
+	//	printf("{%02X}", c);
+	prev_c = c;
+	return c;
+}
+
+int uart_dreg_read(void)
+{
+	int c = input_device_read();
+	//printf("/%02X/", c);
+	return c;
+}
+
+void uart_dreg_write(unsigned char value)
+{
+	//printf("~%02X~", value&0xff);
+	output_device_write(value);
+} 
 
 /* Disassembler */
 void make_hex(char* buff, unsigned int pc, unsigned int length)
@@ -510,12 +596,157 @@ void cpu_instr_callback(int pc)
 */
 }
 
+// bootloader
+
+typedef unsigned long int addr_t;
+
+FILE *xf;
+
+void xprintf(const char *format, ...)
+{
+	va_list ap;
+	va_start(ap, format);
+	vfprintf(stderr, format, ap);
+	va_end(ap);
+}
+
+void poke_ram(addr_t addr, unsigned char c)
+{
+	WRITE_BYTE(g_ram, addr, c);
+}
+
+unsigned char peek_ram(addr_t addr)
+{
+	return READ_BYTE(g_ram, addr);
+}
+
+static int uc = -1;
+int getchr(void)
+{
+    static int count = 0;
+    int c;
+    if (uc >= 0) {
+        c = uc;
+        uc = -1;
+        return c;
+    }
+    while ((c = fgetc(xf)) == '.' && count++ < 2);
+    if (c == '.') {
+        count = 0;
+        return -1;
+    }
+    count = 0;
+    return c;
+}
+
+void ungetchr(int c)
+{
+    uc = c;
+}
+
+int is_hex(char c)
+{
+    if ('0' <= c && c <= '9')
+        return !0;
+    c &= ~0x20;     // capitalize
+    return ('A' <= c && c <= 'F');
+}
+
+int to_hex(char c)
+{
+    //xprintf("{%c}", c);
+    if ('0' <= c && c <= '9')
+        return c - '0';
+    c &= ~0x20;
+    if ('A' <= c && c <= 'F')
+        return c - 'A' + 10;
+    return -1;
+}
+
+void clear_all(void)
+{
+    addr_t p = 0;
+    int i = 0;
+    do {
+        if ((p & 0xfff) == 0) {
+            xprintf("%X", i++);
+        }
+        poke_ram(p, 0);
+    } while (p++ != 0xffff);
+}
+
+void manualboot(void)
+{
+    int c, cc, d, n;
+    addr_t addr = 0, max = 0, min = MAX_RAM + 1;
+    int addr_flag = 0;
+    
+	xprintf(";");
+    while (1) {
+        while ((c = getchr()) == ' ' || c == '\t' || c == '\n' || c == '\r')
+            ;   // skip white spaces
+        if (c == -1)
+            break;
+        if (c == '!' && min < max) {
+            xprintf("\n");
+            // dump memory
+            addr_t start, end;
+            start = min & 0xfff0;
+            end = max;
+            //if (end > 0x40)
+            //    end = 0x40;
+            while (start < end) {
+                if ((start & 0xf) == 0) {
+                    xprintf("%04X ", start);  
+                }
+                d = ((unsigned short)peek_ram(start))<<8;
+                d |= peek_ram(start + 1);
+                xprintf("%04X ", d);
+                if ((start & 0xf) == 0xe) {
+                    xprintf("\n");
+                }
+                start += 2;                
+            }
+            continue;
+        }
+        addr_flag = ((c == '=') || (c == '%'));
+        cc = c;
+        //xprintf("[%c]", c);
+        if (!addr_flag)
+            ungetchr(c);
+        // read one hex value
+        n = 0;
+        while ((d = to_hex((unsigned char)(c = getchr()))) >= 0) {
+            n *= 16; n += d;
+            //xprintf("(%x,%x)", n, d);
+        }
+        if (c < 0)
+            break;
+        if (d < 0) {
+            if (addr_flag) {  // set address
+                if (cc == '=')
+                    addr = (addr_t)n;
+            } else {
+                if (0 <= addr && addr < (MAX_RAM + 1)) {
+                    //xprintf("[%04X] = %02X%02X\n", addr, ((n>>8)&0xff), (n & 0xff));
+                    poke_ram(addr++, ((n>>8) & 0xff));
+                    poke_ram(addr++, (n & 0xff));
+                    if (max < addr)
+                        max = addr;
+                    if (addr - 2 < min)
+                        min = addr - 2;
+                }
+            }
+            continue;
+        }
+    }
+}
+
 
 
 /* The main loop */
 int main(int argc, char* argv[])
 {
-	FILE* fhandle;
 
 	if(argc != 2)
 	{
@@ -523,11 +754,17 @@ int main(int argc, char* argv[])
 		exit(-1);
 	}
 
-	if((fhandle = fopen(argv[1], "rb")) == NULL)
+	if((xf = fopen(argv[1], "rb")) == NULL)
 		exit_error("Unable to open %s", argv[1]);
+	// read dump format
+	manualboot();
+	printf("\nrun...");fflush(stdout);
+	fclose(xf);
 
+#if defined(MAX_ROM)
 	if(fread(g_rom, 1, MAX_ROM+1, fhandle) <= 0)
 		exit_error("Error reading %s", argv[1]);
+#endif //MAX_ROM
 
 //	disassemble_program();
 
@@ -544,7 +781,7 @@ int main(int argc, char* argv[])
 		// Our loop requires some interleaving to allow us to update the
 		// input, output, and nmi devices.
 
-		get_user_input();
+		update_user_input();
 
 		// Values to execute determine the interleave rate.
 		// Smaller values allow for more accurate interleaving with multiple
@@ -557,6 +794,8 @@ int main(int argc, char* argv[])
 		input_device_update();
 		nmi_device_update();
 	}
+
+	input_device_restore();
 
 	return 0;
 }
