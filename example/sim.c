@@ -1,3 +1,11 @@
+//
+// sim for emu68kplus Single Board Computer
+// 2023-5-20 Norihiro Kumagai
+//
+// This system is delived from 'Musashi' 68000 emulator
+// The file 'sim.c' is also derived from it.
+//
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -28,7 +36,7 @@ void disassemble_program();
 /* ROM and RAM sizes */
 //#define MAX_ROM 0xfff
 // emu68kplus has 128kByte RAM
-#define MAX_RAM 0xfffff
+#define MAX_RAM 0x1ffff
 
 
 /* Read/write macros */
@@ -239,15 +247,16 @@ unsigned int cpu_read_long_dasm(unsigned int address)
 /* Write data to RAM or a device */
 void cpu_write_byte(unsigned int address, unsigned int value)
 {
+#if 0
 	if(g_fc & 2)	/* Program */
 		exit_error("Attempted to write %02x to ROM address %08x", value&0xff, address);
-
+#endif
 	/* Otherwise it's data space */
 	switch(address)
 	{
 		case UART_DREG_ADDRESS:
 			uart_dreg_write(value);
-			break;
+			return;
 		default:
 			break;
 	}
@@ -258,15 +267,16 @@ void cpu_write_byte(unsigned int address, unsigned int value)
 
 void cpu_write_word(unsigned int address, unsigned int value)
 {
+#if 0
 	if(g_fc & 2)	/* Program */
 		exit_error("Attempted to write %04x to ROM address %08x", value&0xffff, address);
-
+#endif
 	/* Otherwise it's data space */
 	switch(address)
 	{
 		case UART_DREG_ADDRESS:
 			uart_dreg_write(value);
-			break;
+			return;
 		default:
 			break;
 	}
@@ -277,15 +287,16 @@ void cpu_write_word(unsigned int address, unsigned int value)
 
 void cpu_write_long(unsigned int address, unsigned int value)
 {
+#if 0
 	if(g_fc & 2)	/* Program */
 		exit_error("Attempted to write %08x to ROM address %08x", value, address);
-
+#endif
 	/* Otherwise it's data space */
 	switch(address)
 	{
 		case UART_DREG_ADDRESS:
 			uart_dreg_write(value);
-			break;
+			return;
 		default:
 			break;
 	}
