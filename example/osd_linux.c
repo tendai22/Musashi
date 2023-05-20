@@ -32,7 +32,6 @@ int kbhit (void)
   FD_SET (STDIN_FILENO, &rdfs);
 
   select(STDIN_FILENO+1, &rdfs, NULL, NULL, &tv);
-  int f = FD_ISSET(STDIN_FILENO, &rdfs) ? 1 : 0;
   //printf("%d", f);fflush(stdout);
   return FD_ISSET(STDIN_FILENO, &rdfs);
 

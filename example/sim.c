@@ -519,15 +519,11 @@ void update_user_input(void)
 /* Implementation of UART */
 int uart_creg_read(void)
 {
-	static unsigned char prev_c = 0xe5;
 	unsigned char c = 0;
 	if (g_input_device_ready)
 		c |= 1;
 	if (g_output_device_ready)
 		c |= 2;
-	//if (prev_c != c)
-	//	printf("{%02X}", c);
-	prev_c = c;
 	return c;
 }
 
@@ -727,7 +723,7 @@ void manualboot(void)
                 if (cc == '=')
                     addr = (addr_t)n;
             } else {
-                if (0 <= addr && addr < (MAX_RAM + 1)) {
+                if (/* 0 <= addr &&*/ addr < (MAX_RAM + 1)) {
                     //xprintf("[%04X] = %02X%02X\n", addr, ((n>>8)&0xff), (n & 0xff));
                     poke_ram(addr++, ((n>>8) & 0xff));
                     poke_ram(addr++, (n & 0xff));
