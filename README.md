@@ -86,17 +86,26 @@ emu68kplusというハードウェアをエミュレーションするための�
 
 ### I/Oポート(シリアルI/O)の実現
 
-もともとは、メモリアクセス関数から`input_device_read/write`を直接呼び出していた。が、本実装では、間に、`uart_creg_read/write`, `uart_dreg_read/write`呼び出しをはさみ、そこから`input_device_read/write`を呼び出している。
+メモリアクセス関数から`input_device_read/write`を直接呼び出している。また、命令実行ループの中で、`update_user_input`, `output_device_update`, `input_device_update`を呼び出して状態更新している。
 
-メモリアクセスで 800A0, 800A1にアクセスすると UARTのコントロールレジスタ・データレジスタにアクセスする、の部分を `uart_creg_read/write`, `uart_dreg_read/write`で実現している。
+デバイスドライバの処理を、上位層(I/OポートをRead/Writeすることにより開始する処理)、下位層(データが外部から到着、出力可能になり外部に書き出すことにより開始する処理)の2種類に分けて考えるならば、`input_device_read`, `input_device_status`(新設), `output_device_write`は上位層の処理を行い、`update_user_input`, `output_device_update`, `input_device_update`は下位層の処理を行う。
 
-`uart_creg_read`は、後述のグローバル変数群に保持されたデバイスの状態をレジスタビット割り当てに基づいてビットを立てて返しているだけである。コントローラレジスタへの書き込みは無視されている。
+#### 上位層
 
-`uart_dreg_read/write`は、`input_device_read/write`関数を直接呼び出している。
+* `input_device_read`: UART_DREGからの読み出しを行う。外部からの到着データを取り出すことになる。
+* `input_device_status`: UART_CREGからの読み出しを行う。送信レディ、受信レディ状態を読み出しバイトデータのbit0, bit1に反映させる。
+* `output_device_write`: UART_DREGへの書き込みを行う。送信可能な場合は直ちに送信を開始し、送信可能フラグ(`g_output_device_ready`)をリセットする。送信が可能でない場合(あるデータを送信中であある場合)、書き出しデータを送信データに上書きし、今、送信中のデータが完了後に次のデータ送信を開始する。
 
-ここまで書いて気付いたが、もともとの実装にはステータスレジスタの実装がなかっただけなので、`uart_creg/dreg_...`関数をつくらずに、`input_output_device_status`関数をつくり、そこに現在の`uart_creg_read`の中身をそのまま持っていくだけでよかったかもしれない。
+#### 下位層
 
-その場合、下位層への書き込みは`output_device_update`に持ってゆくことになる。
+* `update_user_input`: 標準入力(ファイルディスクリプタ0番)の入力データの有無を判断し、あればその1バイトを読み出し後、'~', 'ESC'の解釈・処理を行う。読み込んだデータは最終的に`g_input_device_value`に書き込まれ、フラグ`g_input_device_ready`に1がセットされる。
+* `input_device_update`: データがレディの場合、割り込みINT_INPUT_DEVICEをセットする。
+* `output_device_update`: 書き込みデータが`g_output_device_data`に格納されている場合に標準出力にその1バイトを書き込み、割り込みINT_OUTPUT_DEVICEをクリアする。出力完了待ちカウントを開始する。
+
+#### UARTデバイスの状態
+
+以下のグローバル変数と、`irq_controller`の`IRQ_INPUT_DEVICE`, `IRQ_OUTPUT_DEVICE`の状態が
+それである。UARTの「データレジスタ」「シフトレジスタ」「送信完了フラグ」「データレジスタ書き込み可能フラグ」「受信データありフラグ」に該当する。
 
 ```
 int     g_input_device_value = -1;
@@ -106,22 +115,22 @@ unsigned int g_output_device_ready = 0;         /* 1 if output device is ready *
 time_t  g_output_device_last_output;       /* Time of last char output */
 ```
 
-物理層にデータが到着/物理層への書き出しの部分を`input_device_read/write`に担わせるようにした。データ到着はUARTレジスタへのアクセスと非同期で行われるので、データ到着を`update_user_input`関数を定期的に呼び出し、その中で処理させている。
+#### 下位デバイスの扱い
 
-データが到着すると、グローバル変数`g_input_device_value`に書き込み、`g_input_device_ready`を立てる。
+下位デバイスは、Linuxのttyドライバである。ファイルディスクリプタを介しての read/writeを`fgetc`, `printf`呼び出し経由で利用している。
 
-データをUARTデータレジスタに書き込むと、一定時間待ったのちに`printf("%c", c);`を使って書き込む。出力待ち処理は`g_output_device_last_output`に最終出力時刻を保存しておき、現在時刻との差分を取って待ち完了を判定している。待ち時間判定も`output_device_update`を定期的に呼び出し、時間が経過すると`g_output_device_ready`を立てている。
+<stdio.h>ファイルI/Oのバッファリングを止める(`fgetc`/`printf`がバッファリングなしでread/writeシステムコールを呼び出す)ように、`setbuf`でNULL値をセットしている。
 
-現在時刻の取得は`get_msec`関数を作成し使用している。最近のはやりと思われる`clock_gettime`関数を使っている。OS依存なので、定義を`osd_linux.c`に異動させた方がよいかもしれない。
+Linuxのttyドライバは、通常は「行編集モード(COOKEDモード)」であり、1文字キーをたたいても即座にアプリに1バイトが渡らない。行編集モードを解除し1文字押すごとにアプリに1文字わたるモード(RAWモード)に切り替えている。ttyドライバのモード切替は`changemode`関数で行う。引数に1を渡せばRAWモードにする。具体的には`ICANON`と`ECHO`ビットだけを落としている。引数に0を渡せばCOOKEDに戻す。
 
-`osd_linux.c`で、`changemode`関数、`kbhit`関数が用意されている。組み込み流のシリアル読み込みを実現するには`kbhit`関数は欲しい。
+割り込みのキャッチは行っていない。SIGINT, SIGTERM, SIGQUITにより`sim`コマンドを停止させると`changemode(0);`を実行しそこなうのでttyがRAWモードのままになってしまう。シグナルハンドラを整えてこのあたりもちゃんとさせたいところである。
 
-ttyドライバのモード切替は`changemode`関数で行う。引数に1を渡せばRAWモードにする。具体的にはICANONとECHOビットだけを落としている。引数に0を渡せばCOOKEDに戻す。割り込みのキャッチは行っていない。SIGINT, SIGTERM, SIGQUITにより`sim`コマンドを停止させると`changemode(0);`を実行しそこなうのでttyがRAWモードのままになってしまう。シグナルハンドラを整えてこのあたりもちゃんとさせたいところである。
+キー入力の有無を判断するために、`kbhit`関数が用意されている。ファイルディスクリプタ0に対する`select`呼び出しで結果を返している。今回の変更でtimeout指定に1msを指定して、連続した`kbhit`呼び出しでもビジーループにならないようにしておいた。1ループで68000の1命令実行なので、1msはちょっと大きすぎるかもしれない。
 
-`kbhit`関数は`select`呼び出しでファイルディスクリプタ0番をチェックして結果を返している。timeout指定に1msを指定して、連続した`kbhit`呼び出しでもビジーループにならないようにしておいた。  
+`kbhit`関数と`changemode`関数は`osd_linux.c`で定義されている。
 
 ### 割り込み機構
 
-割り込み機構について特に追加の実装を行っていない。もともとのエミュレータそのままである。
+割り込み機構について特に追加の実装を行っていない。もともとのエミュレータそのままである。ただし、シリアルI/Oでの割り込み発生・リセットは元の実装に入っており、割り込みハンドラを有効にすることでそのまま動く可能性は高い。
 
 本エミュレータではもともとの`sim.c`に実装されていた割り込み処理機能をそのまま残しているが、誰も割り込み要因を発生させないので割り込み機能は存在しないのと同じである。emu68kplusではUARTからの割り込みは今のところ実現していない。PICのファームウェアを書き換えれば割り込みも実現できるので、必要になればその時に行う。エミュレータの割り込み機能もその時に火を噴くだろう。

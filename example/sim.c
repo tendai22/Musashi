@@ -70,6 +70,7 @@ void input_device_reset(void);
 void input_device_update(void);
 int input_device_ack(void);
 unsigned int input_device_read(void);
+unsigned int input_device_status(void);
 void input_device_write(unsigned int value);
 
 void output_device_reset(void);
@@ -95,11 +96,13 @@ unsigned int g_nmi = 0;                         /* 1 if nmi pending */
 // one byte read ahead and ungetc
 // we compose PIR9 (uart creg) with g_input_device_ready 
 // and g_output_device_ready
-int			 g_input_device_value = -1;
-int          g_input_device_ready = 0;         /* Current status in input device */
+int		g_input_device_value = -1;
+int		g_input_device_ready = 0;			/* Current status in input device */
 
-unsigned int g_output_device_ready = 0;         /* 1 if output device is ready */
-time_t       g_output_device_last_output;       /* Time of last char output */
+int		g_output_device_data_ready = 0;		/* 1 if g_output_device_data is valid, to be sent */
+int		g_output_device_data = 0xe5;		/* output data to be sent, 0xe5 has no means, magic number */
+int		g_output_device_empty = 1;			/* 1 if output queue is empty, ready to be written to DREG */
+time_t	g_output_device_last_output;		/* Time of last char output */
 
 unsigned int g_int_controller_pending = 0;      /* list of pending interrupts */
 unsigned int g_int_controller_highest_int = 0;  /* Highest pending interrupt */
@@ -151,9 +154,9 @@ unsigned int cpu_read_byte(unsigned int address)
 	switch(address)
 	{
 		case UART_CREG_ADDRESS:
-			return uart_creg_read();
+			return input_device_status();
 		case UART_DREG_ADDRESS:
-			return uart_dreg_read();
+			return input_device_read();
 		default:
 			break;
 	}
@@ -177,9 +180,9 @@ unsigned int cpu_read_word(unsigned int address)
 	switch(address)
 	{
 		case UART_CREG_ADDRESS:
-			return uart_creg_read();
+			return input_device_status();
 		case UART_DREG_ADDRESS:
-			return uart_dreg_read();
+			return input_device_read();
 		default:
 			break;
 	}
@@ -203,9 +206,9 @@ unsigned int cpu_read_long(unsigned int address)
 	switch(address)
 	{
 		case UART_CREG_ADDRESS:
-			return uart_creg_read();
+			return input_device_status();
 		case UART_DREG_ADDRESS:
-			return uart_dreg_read();
+			return input_device_read();
 		default:
 			break;
 	}
@@ -246,7 +249,7 @@ void cpu_write_byte(unsigned int address, unsigned int value)
 	switch(address)
 	{
 		case UART_DREG_ADDRESS:
-			uart_dreg_write(value);
+			output_device_write(value);
 			break;
 		default:
 			break;
@@ -265,7 +268,7 @@ void cpu_write_word(unsigned int address, unsigned int value)
 	switch(address)
 	{
 		case UART_DREG_ADDRESS:
-			uart_dreg_write(value);
+			output_device_write(value);
 			break;
 		default:
 			break;
@@ -284,7 +287,7 @@ void cpu_write_long(unsigned int address, unsigned int value)
 	switch(address)
 	{
 		case UART_DREG_ADDRESS:
-			uart_dreg_write(value);
+			output_device_write(value);
 			break;
 		default:
 			break;
@@ -383,6 +386,16 @@ int input_device_ack(void)
 	return M68K_INT_ACK_AUTOVECTOR;
 }
 
+unsigned int input_device_status(void)
+{
+	unsigned char c = 0;
+	if (g_input_device_ready)
+		c |= 1;
+	if (g_output_device_empty)
+		c |= 2;
+	return c;
+}
+
 unsigned int input_device_read(void)
 {
 	int value;
@@ -400,6 +413,32 @@ void input_device_write(unsigned int value)
 	// do nothing
 	(void)value;
 }
+
+#if 0
+/* Implementation of UART */
+int uart_creg_read(void)
+{
+	unsigned char c = 0;
+	if (g_input_device_ready)
+		c |= 1;
+	if (g_output_device_ready)
+		c |= 2;
+	return c;
+}
+
+int uart_dreg_read(void)
+{
+	int c = input_device_read();
+	//printf("/%02X/", c);
+	return c;
+}
+
+void uart_dreg_write(unsigned char value)
+{
+	//printf("~%02X~", value&0xff);
+	output_device_write(value);
+} 
+#endif
 
 //
 // get_msec ... with clock_gettime, a new POSIC standard
@@ -419,18 +458,27 @@ long int get_msec(void)
 void output_device_reset(void)
 {
 	g_output_device_last_output = get_msec();
-	g_output_device_ready = 1;
+	g_output_device_data_ready = 0;
+	g_output_device_empty = 1;
 	int_controller_clear(IRQ_OUTPUT_DEVICE);
 }
 
 void output_device_update(void)
 {
-	if(!g_output_device_ready)
+	if(g_output_device_empty)		// empty check if any data is pending
 	{
+		if (g_output_device_data_ready)	// there is a data to be sent in g_output_device_data
+		{
+			printf("%c", g_output_device_data);
+			g_output_device_data_ready = 0;
+			g_output_device_last_output = get_msec();
+			g_output_device_empty = 0;
+			int_controller_clear(IRQ_OUTPUT_DEVICE);
+		}
+	} else {	// not empty, now a data is transmitting
 		if((get_msec() - g_output_device_last_output) >= OUTPUT_DEVICE_PERIOD)
 		{
-			//printf("!!");
-			g_output_device_ready = 1;
+			g_output_device_empty = 1;
 			int_controller_set(IRQ_OUTPUT_DEVICE);
 		}
 	}
@@ -449,13 +497,17 @@ unsigned int output_device_read(void)
 
 void output_device_write(unsigned int value)
 {
-	char ch;
-	if(g_output_device_ready)
+	g_output_device_data_ready = 1;
+	g_output_device_data = value & 0xff;
+	if (g_output_device_empty)
 	{
-		ch = value & 0xff;
-		printf("%c", ch);
+		// send it out to lower physical layer
+		// it should be here also, so that short-time consequent output_device_write calling
+		// should not overwritten the first output character.
+		printf("%c", g_output_device_data);
+		g_output_device_data_ready = 0;
 		g_output_device_last_output = get_msec();
-		g_output_device_ready = 0;
+		g_output_device_empty = 0;
 		int_controller_clear(IRQ_OUTPUT_DEVICE);
 	}
 }
@@ -515,30 +567,6 @@ void update_user_input(void)
 	//printf("(%02X)", ch);
 	last_ch = ch;
 }
-
-/* Implementation of UART */
-int uart_creg_read(void)
-{
-	unsigned char c = 0;
-	if (g_input_device_ready)
-		c |= 1;
-	if (g_output_device_ready)
-		c |= 2;
-	return c;
-}
-
-int uart_dreg_read(void)
-{
-	int c = input_device_read();
-	//printf("/%02X/", c);
-	return c;
-}
-
-void uart_dreg_write(unsigned char value)
-{
-	//printf("~%02X~", value&0xff);
-	output_device_write(value);
-} 
 
 /* Disassembler */
 void make_hex(char* buff, unsigned int pc, unsigned int length)
