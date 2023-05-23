@@ -78,6 +78,8 @@ void output_device_update(void);
 int output_device_ack(void);
 unsigned int output_device_read(void);
 void output_device_write(unsigned int value);
+unsigned int debug_port_read(unsigned int addr);
+void debug_port_write(unsigned int addr, unsigned int value);
 
 void int_controller_set(unsigned int value);
 void int_controller_clear(unsigned int value);
@@ -87,6 +89,9 @@ void update_user_input(void);
 int uart_creg_read(void);
 int uart_dreg_read(void);
 void uart_dreg_write(unsigned char c);
+
+void xprintf(const char *format, ...);
+void xgets(char *buf, int size, int noecho_flag);
 
 
 /* Data */
@@ -150,6 +155,10 @@ unsigned int cpu_read_byte(unsigned int address)
 #endif //MAX_ROM
 	}
 
+	/* dbg_port */
+	if ((address & 0xfff00) == 0x80100) {
+		return debug_port_read(address);
+	}
 	/* Otherwise it's data space */
 	switch(address)
 	{
@@ -176,6 +185,10 @@ unsigned int cpu_read_word(unsigned int address)
 #endif //MAX_ROM
 	}
 
+	/* dbg_port */
+	if ((address & 0xfff00) == 0x80100) {
+		return debug_port_read(address);
+	}
 	/* Otherwise it's data space */
 	switch(address)
 	{
@@ -202,6 +215,10 @@ unsigned int cpu_read_long(unsigned int address)
 #endif //MAX_ROM
 	}
 
+	/* dbg_port */
+	if ((address & 0xfff00) == 0x80100) {
+		return debug_port_read(address);
+	}
 	/* Otherwise it's data space */
 	switch(address)
 	{
@@ -245,6 +262,11 @@ void cpu_write_byte(unsigned int address, unsigned int value)
 	if(g_fc & 2)	/* Program */
 		exit_error("Attempted to write %02x to ROM address %08x", value&0xff, address);
 
+	/* dbg_port */
+	if ((address & 0xfff00) == 0x80100) {
+		debug_port_write(address, value);
+		return;
+	}
 	/* Otherwise it's data space */
 	switch(address)
 	{
@@ -264,6 +286,11 @@ void cpu_write_word(unsigned int address, unsigned int value)
 	if(g_fc & 2)	/* Program */
 		exit_error("Attempted to write %04x to ROM address %08x", value&0xffff, address);
 
+	/* dbg_port */
+	if ((address & 0xfff00) == 0x80100) {
+		debug_port_write(address, value);
+		return;
+	}
 	/* Otherwise it's data space */
 	switch(address)
 	{
@@ -283,6 +310,11 @@ void cpu_write_long(unsigned int address, unsigned int value)
 	if(g_fc & 2)	/* Program */
 		exit_error("Attempted to write %08x to ROM address %08x", value, address);
 
+	/* dbg_port */
+	if ((address & 0xfff00) == 0x80100) {
+		debug_port_write(address, value);
+		return;
+	}
 	/* Otherwise it's data space */
 	switch(address)
 	{
@@ -512,6 +544,64 @@ void output_device_write(unsigned int value)
 	}
 }
 
+/* debug port implementation */
+void monitor(int mode);
+static unsigned int g_addr, g_value;
+#define GET_ADDR() g_addr
+
+unsigned int debug_port_read(unsigned int addr)
+{
+	g_addr = addr;
+    xprintf("%05lX: (NA) R\n", addr);
+    monitor(2);
+	return g_value;
+}
+
+void debug_port_write(unsigned int addr, unsigned int value)
+{
+	g_addr = addr;
+	g_value = value;
+    xprintf("%05lX: %02X W\n", addr, (value&0xff));
+    monitor(1);
+}
+
+//
+// monitor
+// monitor_mode: 1 ... DBG_PORT write
+//               2 ... DBG_PORT read
+//               0 ... other(usually single step mode)
+//
+void monitor(int mode)
+{
+	extern int to_hex(char c);
+    static char buf[8];
+    int c, d;
+    
+//    xprintf("|%05lX %02X %c ", addr, PORTC, ((RA5) ? 'R' : 'W'));
+    
+    if (mode == 2) {    // DBG_PORT read
+        xprintf(" IN>");
+        xgets(buf, 7, 0);
+        int i = 0, n = 0;
+        while (i < 8 && (c = buf[i++]) && (d = to_hex((unsigned char)c)) >= 0) {
+            n *= 16; n += d;
+            //xprintf("(%x,%x)", n, d);
+        }
+		g_value = n;
+    } else {
+        if (mode == 1) { // DBG_PORT write
+            xprintf(" OUT: %02x", g_value);
+        }
+#if 0
+        if ((c = getch()) == '.')
+            ss_flag = 0;
+        else if (c == 's' || c == ' ')
+            ss_flag = 1;
+#endif
+        xprintf("\n");
+    }
+}
+
 
 /* Implementation for the interrupt controller */
 void int_controller_set(unsigned int value)
@@ -632,6 +722,14 @@ void xprintf(const char *format, ...)
 	va_start(ap, format);
 	vfprintf(stderr, format, ap);
 	va_end(ap);
+}
+
+void xgets(char *buf, int size, int noecho_flag)
+{
+	noecho_flag = 0;
+	changemode(noecho_flag);	// COOKED mode
+	fgets(buf, size, stdin);
+	changemode(1);	// RAW mode
 }
 
 void poke_ram(addr_t addr, unsigned char c)
