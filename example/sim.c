@@ -785,7 +785,7 @@ int main(int argc, char* argv[])
 		// 100000 is usually a good value to start at, then work from there.
 
 		// Note that I am not emulating the correct clock speed!
-		m68k_execute(100000);
+		m68k_execute(1);getchar();
 		output_device_update();
 		input_device_update();
 		nmi_device_update();

@@ -989,12 +989,13 @@ int m68k_execute(int num_cycles)
 			for (i = 15; i >= 0; i--){
 				REG_DA_SAVE[i] = REG_DA[i];
 			}
-
+fprintf(stderr,"[%08X:", REG_PC);
 			/* Read an instruction and call its handler */
 			REG_IR = m68ki_read_imm_16();
+fprintf(stderr,"%04X]", REG_IR);
 			m68ki_instruction_jump_table[REG_IR]();
 			USE_CYCLES(CYC_INSTRUCTION[REG_IR]);
-
+fprintf(stderr,"A6:%04X A1:%04X A0:%04X\n", REG_A[6], REG_A[1], REG_A[0]);
 			/* Trace m68k_exception, if necessary */
 			m68ki_exception_if_trace(); /* auto-disable (see m68kcpu.h) */
 		} while(GET_CYCLES() > 0);
