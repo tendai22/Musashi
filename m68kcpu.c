@@ -942,6 +942,7 @@ void m68k_set_cpu_type(unsigned int cpu_type)
 }
 
 static int ss_flag = 0;
+extern int g_quit;
 
 /* Execute some instructions until we use up num_cycles clock cycles */
 /* ASG: removed per-instruction interrupt checks */
