@@ -944,6 +944,7 @@ void m68k_set_cpu_type(unsigned int cpu_type)
 }
 
 static int ss_flag = 0;
+extern int g_quit;
 
 /* breakpoint address table */
 uint breakpoint_addr[16];
