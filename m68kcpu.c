@@ -92,6 +92,8 @@ uint    m68ki_aerr_address;
 uint    m68ki_aerr_write_mode;
 uint    m68ki_aerr_fc;
 
+extern unsigned int g_quit;
+
 jmp_buf m68ki_bus_error_jmp_buf;
 
 /* Used by shift & rotate instructions */
@@ -993,14 +995,15 @@ int m68k_execute(int num_cycles)
 			}
 			/* pre instruction */
 			if (REG_PC == 0x8000) { g_quit = 1; fprintf(stderr, "0x8000: abort CPU\n"); break; }
-			if (REG_PC == 0x1172) { ss_flag = 1; }
+			/*if (REG_PC == 0x103e) { ss_flag = 2; }*/
 			if (ss_flag) fprintf(stderr,"%08X:", REG_PC);
 			/* Read an instruction and call its handler */
 			REG_IR = m68ki_read_imm_16();
 			m68ki_instruction_jump_table[REG_IR]();
 			USE_CYCLES(CYC_INSTRUCTION[REG_IR]);
-			if (ss_flag) fprintf(stderr,"%04X A0:%04X A1:%04X D0:%04X D1:%04X\n", REG_IR, REG_A[0], REG_A[1], REG_D[0], REG_D[1]);
-			if (ss_flag) { getchar(); ss_flag = 0; }
+			if (ss_flag) fprintf(stderr,"%04X A0:%04X A1:%04X A2:%04X A4:%04X A5:%04X A6:%04X D0:%04X D1:%04X D2:%04X D3:%04X\n", REG_IR, REG_A[0], REG_A[1], REG_A[2], REG_A[4], REG_A[5], REG_A[6], REG_D[0], REG_D[1], REG_D[2], REG_D[3]);
+			/*if (ss_flag) fprintf(stderr,"%04X D0:%04X D1:%04X D2:%04X D3:%04X D4:%04X\n", REG_IR, REG_D[0], REG_D[1], REG_D[2], REG_D[3], REG_D[4]);*/
+			if (ss_flag) { int c = getchar(); if (ss_flag == 1 || c == '.') ss_flag = 0; }
 			/* Trace m68k_exception, if necessary */
 			m68ki_exception_if_trace(); /* auto-disable (see m68kcpu.h) */
 		} while(GET_CYCLES() > 0);
