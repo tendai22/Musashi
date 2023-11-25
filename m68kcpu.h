@@ -143,8 +143,9 @@ typedef uint32 uint64;
 	}
 #endif /* UINT_MAX == 0xffffffff */
 
-
-
+/* breakpoint addresses */
+extern uint breakpoint_addr[];		/* defined in m68cpu.c */
+extern void set_breakpoint_addr(uint addr);
 
 /* ======================================================================== */
 /* ============================ GENERAL DEFINES =========================== */

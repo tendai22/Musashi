@@ -799,13 +799,13 @@ void manualboot(void)
     addr_t addr = 0, max = 0, min = MAX_RAM + 1;
     int addr_flag = 0;
     
-	xprintf(";");
     while (1) {
         while ((c = getchr()) == ' ' || c == '\t' || c == '\n' || c == '\r')
             ;   // skip white spaces
         if (c == -1)
             break;
         if (c == '!' && min < max) {
+			// dump memory between min and max
             xprintf("\n");
             // dump memory
             addr_t start, end;
@@ -827,9 +827,9 @@ void manualboot(void)
             }
             continue;
         }
-        addr_flag = ((c == '=') || (c == '%'));
+        addr_flag = ((c == '=') || (c == '%') || (c == 'P'));
+			// P specifies breakpoint address
         cc = c;
-        //xprintf("[%c]", c);
         if (!addr_flag)
             ungetchr(c);
         // read one hex value
@@ -844,6 +844,12 @@ void manualboot(void)
             if (addr_flag) {  // set address
                 if (cc == '=')
                     addr = (addr_t)n;
+				else if (cc == 'P') {
+					// set breakpoint address
+					fprintf(stderr, "P%04lX", (addr_t)n);
+					extern void set_breakpoint_addr(uint a);
+					set_breakpoint_addr((uint)n);
+				}
             } else {
                 if (/* 0 <= addr &&*/ addr < (MAX_RAM + 1)) {
                     //xprintf("[%04X] = %02X%02X\n", addr, ((n>>8)&0xff), (n & 0xff));
@@ -866,18 +872,22 @@ void manualboot(void)
 int main(int argc, char* argv[])
 {
 
-	if(argc != 2)
+	if(argc == 1)
 	{
-		printf("Usage: sim <program file>\n");
+		printf("Usage: sim <program file>...\n");
 		exit(-1);
 	}
 
-	if((xf = fopen(argv[1], "rb")) == NULL)
-		exit_error("Unable to open %s", argv[1]);
+	// boot process
+	xprintf(";");		// boot prompt
+	for(int i = 1; i < argc; ++i) {
+		if((xf = fopen(argv[i], "rb")) == NULL)
+			exit_error("Unable to open %s", argv[1]);
+		manualboot();
+		fclose(xf);
+	}
 	// read dump format
-	manualboot();
 	printf("\nrun...");fflush(stdout);
-	fclose(xf);
 
 #if defined(MAX_ROM)
 	if(fread(g_rom, 1, MAX_ROM+1, fhandle) <= 0)

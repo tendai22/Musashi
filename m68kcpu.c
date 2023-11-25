@@ -945,6 +945,19 @@ void m68k_set_cpu_type(unsigned int cpu_type)
 
 static int ss_flag = 0;
 
+/* breakpoint address table */
+uint breakpoint_addr[16];
+#define MAX_BREAKPOINT_ADDR (sizeof breakpoint_addr / sizeof (uint))
+
+void set_breakpoint_addr(uint addr)
+{
+	static uint counter = 0;
+	if (counter < MAX_BREAKPOINT_ADDR) {
+		fprintf(stderr, "set_bp[%d]: %08x\n", counter, addr);
+		breakpoint_addr[counter++] = addr;
+	}
+}
+
 /* Execute some instructions until we use up num_cycles clock cycles */
 /* ASG: removed per-instruction interrupt checks */
 int m68k_execute(int num_cycles)
@@ -995,6 +1008,14 @@ int m68k_execute(int num_cycles)
 			}
 			/* pre instruction */
 			if (REG_PC == 0x8000) { g_quit = 1; fprintf(stderr, "0x8000: abort CPU\n"); break; }
+			/* break address check */
+			for (i = 0; i < (int)MAX_BREAKPOINT_ADDR && breakpoint_addr[i] != 0; ++i) {
+				if (REG_PC == breakpoint_addr[i]) {
+					fprintf(stderr,"break at %04X>\n", REG_PC);
+					ss_flag = 2;
+					break;
+				}
+			}
 			/*if (REG_PC == 0x103e) { ss_flag = 2; }*/
 			if (ss_flag) fprintf(stderr,"%08X:", REG_PC);
 			/* Read an instruction and call its handler */
