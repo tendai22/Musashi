@@ -928,3 +928,20 @@ int main(int argc, char* argv[])
 	return 0;
 }
 
+void dump_buffers(void)
+{
+	unsigned char cc;
+	/* buffer dump */
+	fprintf(stderr, "linebuf: ");
+	for (int i = 0; i < 20; ++i) {
+		cc = peek_ram(0x3000+i);
+		fprintf(stderr, "%02x ", cc);
+	}
+	fprintf(stderr, "\n");
+	fprintf(stderr, "wordbuf: ");
+	for (int i = 0; i < 20; ++i) {
+		cc = peek_ram(0x3080+i);
+		fprintf(stderr, "%02x ", cc);
+	}
+	fprintf(stderr, "\n");
+}
