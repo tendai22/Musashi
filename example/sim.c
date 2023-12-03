@@ -31,7 +31,7 @@ void disassemble_program();
 
 /* Time between characters sent to output device (seconds) */
 // changed as milliseconds about 10000bps serial speed
-#define OUTPUT_DEVICE_PERIOD 2
+#define OUTPUT_DEVICE_PERIOD 1
 
 /* ROM and RAM sizes */
 //#define MAX_ROM 0xfff
@@ -945,13 +945,13 @@ void dump_linbuf(void)
 	fprintf(stderr, "\n");
 }
 
-void dump_here(void)
+void dump_tail(void)
 {
 	int h, l;
-	h = peek_ram(0x2002), l = peek_ram(0x2003);
+	h = peek_ram(0x2006), l = peek_ram(0x2007);
 	unsigned int a = (h * 256) | l;
 
-	fprintf(stderr, "here[%04x]: ", a);
+	fprintf(stderr, "tail[%04x]: ", a);
 	for (int i = 0; i < 20; ++i) {
 		unsigned char c = peek_ram(a + i);
 		fprintf(stderr, "%02X ", c);
