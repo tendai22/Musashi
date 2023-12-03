@@ -944,7 +944,7 @@ void m68k_set_cpu_type(unsigned int cpu_type)
 }
 
 static int ss_flag = 0;
-extern int g_quit;
+//extern int g_quit;
 
 /* breakpoint address table */
 uint breakpoint_addr[16];
@@ -1025,7 +1025,19 @@ int m68k_execute(int num_cycles)
 			USE_CYCLES(CYC_INSTRUCTION[REG_IR]);
 			if (ss_flag) fprintf(stderr,"%04X A0:%04X A1:%04X A2:%04X A4:%04X A5:%04X A6:%04X D0:%04X D1:%04X D2:%04X D3:%04X\n", REG_IR, REG_A[0], REG_A[1], REG_A[2], REG_A[4], REG_A[5], REG_A[6], REG_D[0], REG_D[1], REG_D[2], REG_D[3]);
 			/*if (ss_flag) fprintf(stderr,"%04X D0:%04X D1:%04X D2:%04X D3:%04X D4:%04X\n", REG_IR, REG_D[0], REG_D[1], REG_D[2], REG_D[3], REG_D[4]);*/
-			if (ss_flag) { int c = getchar(); if (ss_flag == 1 || c == '.') ss_flag = 0; }
+			if (ss_flag) {
+				int c = getchar();
+				if (ss_flag == 1 || c == '.') ss_flag = 0;
+				if (c == 'b') {
+					/* dump linbuf */
+					extern void dump_linbuf(void);
+					dump_linbuf();
+				} else if (c == 'h') {
+					/* dump here, end of dict */
+					extern void dump_here();
+					dump_here();
+				}
+			}
 			/* Trace m68k_exception, if necessary */
 			m68ki_exception_if_trace(); /* auto-disable (see m68kcpu.h) */
 		} while(GET_CYCLES() > 0);
