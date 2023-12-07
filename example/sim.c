@@ -474,12 +474,13 @@ void uart_dreg_write(unsigned char value)
 long int get_msec(void)
 {
 	struct timespec ts;
-	static unsigned long int start = 0;
+	static unsigned long int start = 0, current;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
+	current = (unsigned long int)ts.tv_sec * 1000L + ts.tv_nsec / 1000000L; 
 	if (start == 0) {
-		start = ts.tv_nsec;
+		start = current;
 	}
-	return ((unsigned long int)ts.tv_nsec - start)/1000000;
+	return current - start;
 }
 
 /* Implementation for the output device */
@@ -882,7 +883,7 @@ int main(int argc, char* argv[])
 	xprintf(";");		// boot prompt
 	for(int i = 1; i < argc; ++i) {
 		if((xf = fopen(argv[i], "rb")) == NULL)
-			exit_error("Unable to open %s", argv[1]);
+			exit_error("Unable to open %s", argv[i]);
 		manualboot();
 		fclose(xf);
 	}
