@@ -952,10 +952,13 @@ void dump_tail(void)
 	h = peek_ram(0x2006), l = peek_ram(0x2007);
 	unsigned int a = (h * 256) | l;
 
-	fprintf(stderr, "tail[%04x]: ", a);
-	for (int i = 0; i < 20; ++i) {
+	for (int i = 0; i < 48; ++i) {
+		if (i % 16 == 0)
+			fprintf(stderr, "tail[%04x]: ", a + i);
 		unsigned char c = peek_ram(a + i);
 		fprintf(stderr, "%02X ", c);
+		if (i % 16 == 15)
+			fprintf(stderr,"\n");
 	}
 	fprintf(stderr, "\n");
 
