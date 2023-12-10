@@ -1041,6 +1041,12 @@ int m68k_execute(int num_cycles)
 						/* dump here, end of dict */
 						extern void dump_tail();
 						dump_tail();
+					} else if(c == 'v') {
+						extern void dump_variable();
+						dump_variable();
+					} else if (c == 's') {
+						extern void dump_streambuf();
+						dump_streambuf();
 					}
 				}
 			}
