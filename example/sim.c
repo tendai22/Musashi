@@ -953,13 +953,13 @@ void dump_linbuf(void)
 	fprintf(stderr, "\n");
 }
 
-void dump_bufchar(unsigned short top, int n)
+void dump_bufchar(const char *name, unsigned short top, int n)
 {
 	unsigned int a = top;
 
 	for (int i = 0; i < n; ++i) {
 		if (i % 16 == 0)
-			fprintf(stderr, "tail[%04x]: ", a + i);
+			fprintf(stderr, "%s[%04x]: ", name, a + i);
 		unsigned char c = peek_ram(a + i);
 		fprintf(stderr, "%02X ", c);
 		if (i % 16 == 15)
@@ -968,12 +968,12 @@ void dump_bufchar(unsigned short top, int n)
 	fprintf(stderr, "\n");
 }
 
-void dump_bufword(unsigned short top, int n)
+void dump_bufword(const char *name, unsigned short top, int n)
 {
 	unsigned short a = top, w;
 	for (int i = 0; i < n; ++i) {
 		if (i % 8 == 0)
-			fprintf(stderr, "var[%04x]: ", a + 2 * i);
+			fprintf(stderr, "%s[%04x]: ", name, a + 2 * i);
 		w = peek_word(a + 2 * i);
 		fprintf(stderr, "%04X ", w);
 		if (i % 8 == 7)
@@ -984,15 +984,15 @@ void dump_bufword(unsigned short top, int n)
 
 void dump_tail(void)
 {
-	dump_bufchar(peek_word(0x2006), 48);
+	dump_bufchar("tail", peek_word(0x2006), 48);
 }
 
 void dump_variable(void)
 {
-	dump_bufword(0x3400, 5);
+	dump_bufword("var", 0x3400, 5);
 }
 
 void dump_streambuf(void)
 {
-	dump_bufchar(0x3100, 32);
+	dump_bufchar("streambuf", 0x3100, 32);
 }

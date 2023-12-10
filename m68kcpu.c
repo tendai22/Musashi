@@ -959,6 +959,9 @@ void set_breakpoint_addr(uint addr)
 	}
 }
 
+extern void dump_bufchar(const char *, unsigned short, unsigned short);
+extern void dump_bufword(const char *, unsigned short, unsigned short);
+
 /* Execute some instructions until we use up num_cycles clock cycles */
 /* ASG: removed per-instruction interrupt checks */
 int m68k_execute(int num_cycles)
@@ -1039,14 +1042,13 @@ int m68k_execute(int num_cycles)
 						dump_linbuf();
 					} else if (c == 't') {
 						/* dump here, end of dict */
-						extern void dump_tail();
-						dump_tail();
+						dump_bufchar("tail", peek_word(0x2006), 48);
 					} else if(c == 'v') {
-						extern void dump_variable();
-						dump_variable();
+						dump_bufword("var", 0x3400, 5);
 					} else if (c == 's') {
-						extern void dump_streambuf();
-						dump_streambuf();
+						dump_bufchar("streambuf", 0x3100, 32);
+					} else if (c == 'd') {
+						dump_bufword("dicttop", 0x2000, 8);
 					}
 				}
 			}
