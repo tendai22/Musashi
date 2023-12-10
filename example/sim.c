@@ -973,8 +973,8 @@ void dump_bufword(unsigned short top, int n)
 	unsigned short a = top, w;
 	for (int i = 0; i < n; ++i) {
 		if (i % 8 == 0)
-			fprintf(stderr, "var[%04x]: ", a + i);
-		w = peek_word(a + i);
+			fprintf(stderr, "var[%04x]: ", a + 2 * i);
+		w = peek_word(a + 2 * i);
 		fprintf(stderr, "%04X ", w);
 		if (i % 8 == 7)
 			fprintf(stderr,"\n");
