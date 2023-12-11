@@ -959,6 +959,16 @@ void set_breakpoint_addr(uint addr)
 	}
 }
 
+
+extern uint start_trace;
+extern uint end_trace;
+extern uint donext_addr;
+
+void set_donext_addr(uint addr)
+{
+	donext_addr = addr;
+}
+
 extern void dump_bufchar(const char *, unsigned short, unsigned short);
 extern void dump_bufword(const char *, unsigned short, unsigned short);
 extern unsigned short peek_word(unsigned short);
@@ -1015,7 +1025,13 @@ int m68k_execute(int num_cycles)
 			if (REG_PC == 0x8000) { g_quit = 1; fprintf(stderr, "0x8000: abort CPU\n"); break; }
 			/* break address check */
 			for (i = 0; i < (int)MAX_BREAKPOINT_ADDR && breakpoint_addr[i] != 0; ++i) {
-				if (REG_PC == breakpoint_addr[i]) {
+				if (REG_PC == donext_addr) {
+					if (start_trace && start_trace <= REG_A[0] && REG_A[0] < end_trace) {
+						fprintf(stderr,"wordtrace at %04X>\n", REG_A[0]);
+						ss_flag = 2;
+						break;
+					}
+				} else if (REG_PC == breakpoint_addr[i]) {
 					fprintf(stderr,"break at %04X>\n", REG_PC);
 					ss_flag = 2;
 					break;
@@ -1032,6 +1048,7 @@ int m68k_execute(int num_cycles)
 			/*if (ss_flag) fprintf(stderr,"%04X D0:%04X D1:%04X D2:%04X D3:%04X D4:%04X\n", REG_IR, REG_D[0], REG_D[1], REG_D[2], REG_D[3], REG_D[4]);*/
 			if (ss_flag) {
 				while (ss_flag) {
+					fprintf(stderr,"[.btvsdf>");
 					int c = getchar();
 					if (c == ' ') {
 						break;
@@ -1050,6 +1067,9 @@ int m68k_execute(int num_cycles)
 						dump_bufchar("streambuf", 0x3100, 32);
 					} else if (c == 'd') {
 						dump_bufword("dicttop", 0x2000, 8);
+					} else if (c == 'f') {
+						extern void dump_find(void);
+						dump_find();
 					}
 				}
 			}
