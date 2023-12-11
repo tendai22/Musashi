@@ -960,18 +960,25 @@ void set_breakpoint_addr(uint addr)
 }
 
 
-extern uint start_trace;
-extern uint end_trace;
-extern uint donext_addr;
+typedef unsigned short saddr_t;
 
-void set_donext_addr(uint addr)
+extern saddr_t start_trace;
+extern saddr_t end_trace;
+extern saddr_t donext_addr;
+extern saddr_t wordtrace_addr;
+
+void set_donext_addr(saddr_t addr)
 {
 	donext_addr = addr;
 }
 
-extern void dump_bufchar(const char *, unsigned short, unsigned short);
-extern void dump_bufword(const char *, unsigned short, unsigned short);
-extern unsigned short peek_word(unsigned short);
+extern void dump_bufchar(const char *, saddr_t, saddr_t);
+extern void dump_bufword(const char *, saddr_t, saddr_t);
+extern unsigned short peek_word(saddr_t);
+extern void _find_addr(saddr_t addr, saddr_t *startp, saddr_t *endp);
+extern unsigned char g_ram[];
+
+static int prompt_flag = 0;
 
 /* Execute some instructions until we use up num_cycles clock cycles */
 /* ASG: removed per-instruction interrupt checks */
@@ -1026,29 +1033,50 @@ int m68k_execute(int num_cycles)
 			/* break address check */
 			for (i = 0; i < (int)MAX_BREAKPOINT_ADDR && breakpoint_addr[i] != 0; ++i) {
 				if (REG_PC == donext_addr) {
-					if (start_trace && start_trace <= REG_A[0] && REG_A[0] < end_trace) {
-						fprintf(stderr,"wordtrace at %04X>\n", REG_A[0]);
+					if (REG_A[0] == wordtrace_addr) {
+						/* word 'word_break' invoked, so set start_trace/end_trace */
+						fprintf(stderr, "In word %04X", REG_A[6]);
+						_find_addr(REG_A[6], &start_trace, &end_trace);		/* %a6 is in its upper(target) word */
+						if (start_trace)
+							fprintf(stderr, "(%.*s)\n", (g_ram[start_trace]&0x1f), &g_ram[start_trace + 1]);
+					}
+					if (start_trace && start_trace <= REG_A[6] && REG_A[6] < end_trace) {
+						saddr_t cur_entry = 0;
+						// wordtrace, print word entry name
+						fprintf(stderr,"%04X:%04X", REG_A[6], REG_A[0]);
+						_find_addr(REG_A[0], &cur_entry, NULL);
+						if (cur_entry) {
+							fprintf(stderr, "(%.*s)", (g_ram[cur_entry]&0x1f), &g_ram[cur_entry + 1]);
+						}
+						// dump stack
+						fprintf(stderr, " <");
+						for (saddr_t addr = 0xfb00 - 2; REG_A[5] <= addr ; addr -= 2) {
+							fprintf(stderr, " %04X", peek_word(addr));
+						}
+						fprintf(stderr, ">\n");
 						ss_flag = 2;
 						break;
 					}
-				} else if (REG_PC == breakpoint_addr[i]) {
+				} else if (REG_PC == breakpoint_addr[i] && REG_PC != donext_addr && REG_PC != wordtrace_addr) {
 					fprintf(stderr,"break at %04X>\n", REG_PC);
 					ss_flag = 2;
 					break;
 				}
 			}
 			/*if (REG_PC == 0x103e) { ss_flag = 2; }*/
-			if (ss_flag) fprintf(stderr,"%08X:", REG_PC);
+			uint print_pc;
+			print_pc = (ss_flag && REG_PC != donext_addr) ? REG_PC : 0;
 			/* Read an instruction and call its handler */
 			REG_IR = m68ki_read_imm_16();
 			m68ki_instruction_jump_table[REG_IR]();
 			USE_CYCLES(CYC_INSTRUCTION[REG_IR]);
 #if 1
-			if (ss_flag) fprintf(stderr,"%04X A0:%04X A1:%04X A2:%04X A4:%04X A5:%04X A6:%04X D0:%04X D1:%04X D2:%04X D3:%04X\n", REG_IR, REG_A[0], REG_A[1], REG_A[2], REG_A[4], REG_A[5], REG_A[6], REG_D[0], REG_D[1], REG_D[2], REG_D[3]);
+			if (ss_flag && print_pc) fprintf(stderr,"%08X:%04X A0:%04X A1:%04X A2:%04X A4:%04X A5:%04X A6:%04X D0:%04X D1:%04X D2:%04X D3:%04X\n", print_pc, REG_IR, REG_A[0], REG_A[1], REG_A[2], REG_A[4], REG_A[5], REG_A[6], REG_D[0], REG_D[1], REG_D[2], REG_D[3]);
 			/*if (ss_flag) fprintf(stderr,"%04X D0:%04X D1:%04X D2:%04X D3:%04X D4:%04X\n", REG_IR, REG_D[0], REG_D[1], REG_D[2], REG_D[3], REG_D[4]);*/
 			if (ss_flag) {
 				while (ss_flag) {
-					fprintf(stderr,"[.btvsdf>");
+					if (prompt_flag)
+						fprintf(stderr,"[.btvsdf>");
 					int c = getchar();
 					if (c == ' ') {
 						break;
@@ -1070,6 +1098,8 @@ int m68k_execute(int num_cycles)
 					} else if (c == 'f') {
 						extern void dump_find(void);
 						dump_find();
+					} else if (c == '?') {
+						prompt_flag = !prompt_flag;
 					}
 				}
 			}

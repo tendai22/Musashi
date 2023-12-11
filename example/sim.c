@@ -795,7 +795,10 @@ void clear_all(void)
     } while (p++ != 0xffff);
 }
 
-extern void set_breakpoint_addr(uint a);
+typedef unsigned short saddr_t;
+
+extern void set_breakpoint_addr(saddr_t a);
+extern void set_wordtrace_addr(saddr_t addr);
 
 void manualboot(void)
 {
@@ -831,7 +834,7 @@ void manualboot(void)
             }
             continue;
         }
-        addr_flag = ((c == '=') || (c == '%') || (c == 'P'));
+        addr_flag = ((c == '=') || (c == '%') || (c == 'P') || (c == 'Q') || (c == 'R'));
 			// P specifies breakpoint address
         cc = c;
         if (!addr_flag)
@@ -851,19 +854,20 @@ void manualboot(void)
 				else if (cc == 'P') {
 					// set breakpoint address
 					fprintf(stderr, "P%04lX", (addr_t)n);
-					set_breakpoint_addr((uint)n);
+					set_breakpoint_addr(n);
 				} else if (cc == 'Q') {
 					// set word trace breakpoint, %a0 has IP
 					fprintf(stderr, "Q%04lX", (addr_t)n);
-					extern void set_wordtrace_addr(uint a);
-					set_breakpoint_addr((uint)n);
-					set_wordtrace_addr((uint)n);
+					extern void set_wordtrace_addr(saddr_t a);
+					set_breakpoint_addr(n);
+					set_wordtrace_addr(n);
 				} else if (cc == 'R') {
 					// set do_next breakpoint
 					// here, %a0 has the address of next-to-jump token
-					extern void set_donext_addr(uint a);
-					set_breakpoint_addr((uint)n);
-					set_donext_addr((uint)n);
+					fprintf(stderr, "R%04lX", (addr_t)n);
+					extern void set_donext_addr(saddr_t a);
+					set_breakpoint_addr(n);
+					set_donext_addr(n);
 
 				}
             } else {
@@ -1012,8 +1016,6 @@ void dump_streambuf(void)
 	dump_bufchar("streambuf", 0x3100, 32);
 }
 
-typedef unsigned short saddr_t;
-
 // word execution trace
 addr_t _find(const char *name, int *result_len)
 {
@@ -1044,13 +1046,14 @@ addr_t _find(const char *name, int *result_len)
 	return dp;
 }
 
-uint start_trace = 0;
-uint end_trace = 0;
-uint donext_addr = 0;
+saddr_t start_trace = 0;
+saddr_t end_trace = 0;
+saddr_t donext_addr = 0;
+saddr_t wordtrace_addr = 0;
 
-void _find_addr(saddr_t addr)
+void _find_addr(saddr_t addr, saddr_t *startp, saddr_t *endp)
 {
-	saddr_t np, dp0, dp = peek_word(0x2004);			// last
+	saddr_t np, dp0, dp = peek_word(0x2004);	// last
 	saddr_t pp = peek_word(0x2002);				// here
 	//fprintf(stderr, "dp = %04X\n", dp);
 	while(dp) {
@@ -1060,9 +1063,11 @@ void _find_addr(saddr_t addr)
 		//fprintf(stderr, "dp = %04X: len = %d, name = %s, entry = %.*s\n", dp, len, name, len, &g_ram[dp + 1]);
 		if (dp0 <= addr && addr < pp) {
 			// got it
-			start_trace = dp0;
-			end_trace = pp;
-			fprintf(stderr, "start_trace: %04X, end_trace: %04X\n", start_trace, end_trace);
+			if (startp)
+				*startp = dp0;
+			if (endp)
+				*endp = pp;
+			//fprintf(stderr, "start: %04X, end: %04X\n", dp0, pp);
 			return;
 		}
 		// not match, seek previous entry
@@ -1073,14 +1078,18 @@ void _find_addr(saddr_t addr)
 		dp = np;
 	}
 	// not find, do nothing
-	fprintf(stderr, "bad trace addr: %04X\n", addr);
+	//fprintf(stderr, "bad trace addr: %04X\n", addr);
+	if (startp)
+		*startp = 0;
+	if (endp)
+		*endp = 0;
 	return;
 }
 
 void dump_find(void)
 {
 	char buf[80];
-	unsigned short addr;
+	saddr_t addr;
 	int len;
 	fprintf(stderr,"name>");
 	changemode(0);
@@ -1094,9 +1103,10 @@ void dump_find(void)
 	fprintf(stderr, "result = %04X, len = %d\n", addr, len);
 }
 
-void set_wordtrace_addr(uint addr)
+void set_wordtrace_addr(saddr_t addr)
 {
-	fprintf(stderr, "set_wordtrace_addr: %04X\n", (saddr_t)addr);
-	_find_addr((saddr_t)addr);
+	fprintf(stderr, "set_wordtrace_addr: %04X\n", addr);
+	// %a6 has within target word address
+	wordtrace_addr = addr;
 }
 
