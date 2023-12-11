@@ -961,6 +961,7 @@ void set_breakpoint_addr(uint addr)
 
 extern void dump_bufchar(const char *, unsigned short, unsigned short);
 extern void dump_bufword(const char *, unsigned short, unsigned short);
+extern unsigned short peek_word(unsigned short);
 
 /* Execute some instructions until we use up num_cycles clock cycles */
 /* ASG: removed per-instruction interrupt checks */
