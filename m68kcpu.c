@@ -1092,7 +1092,7 @@ int m68k_execute(int num_cycles)
 					} else if(c == 'v') {
 						dump_bufword("var", 0x3400, 5);
 					} else if (c == 's') {
-						dump_bufchar("streambuf", 0x3100, 32);
+						dump_bufchar("s0", 0xfe00, 32);
 					} else if (c == 'd') {
 						dump_bufword("dicttop", 0x2000, 8);
 					} else if (c == 'f') {
